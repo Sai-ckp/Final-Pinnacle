@@ -16,32 +16,73 @@ jobs:
     permissions:
       contents: read
 
-    steps:
-      - uses: actions/checkout@v4
+    env:
+      DB_NAME: ${{ secrets.DB_NAME }}
+      DB_USER: ${{ secrets.DB_USER }}
+      DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
+      DB_HOST: ${{ secrets.DB_HOST }}
+      DB_PORT: ${{ secrets.DB_PORT }}
 
-      - name: Set up Python 3.9
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install system dependencies for WeasyPrint
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libcairo2 \
+            libpango-1.0-0 \
+            libpangocairo-1.0-0 \
+            libgdk-pixbuf2.0-0 \
+            libffi-dev \
+            shared-mime-info
+
+      - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.9'
 
-      - name: Install dependencies
+      - name: Cache pip dependencies
+        uses: actions/cache@v3
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-
+
+      - name: Create virtual environment and install dependencies
         run: |
-          python -m pip install --upgrade pip
+          python -m venv venv
+          source venv/bin/activate
+          pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Collect static files
+      - name: Run collectstatic
+        env:
+          DJANGO_SETTINGS_MODULE: pinnacle.settings
         run: |
-          python manage.py collectstatic --noinput
+          source venv/bin/activate
+          python manage.py collectstatic --noinput || true
 
-      - name: Prepare deployment package
+      - name: Run Django migrations
+        env:
+          DJANGO_SETTINGS_MODULE: pinnacle.settings
         run: |
-          zip -r app.zip . -x "venv/*" ".git/*" "*.github/*" "*.vscode/*" "app.zip" "tests/*"
+          source venv/bin/activate
+          python manage.py migrate
 
-      - name: Upload artifact for deployment jobs
+      - name: Prepare artifact
+        run: |
+          shopt -s dotglob
+          mkdir artifact
+          rsync -av --exclude='venv' --exclude='artifact' --exclude='.git' ./ artifact/
+
+      - name: Upload artifact for deployment
         uses: actions/upload-artifact@v4
         with:
           name: python-app
-          path: app.zip
+          path: artifact
 
   deploy:
     runs-on: ubuntu-latest
@@ -55,6 +96,15 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: python-app
+          path: app
+
+      - name: Move contents to root for deployment
+        run: |
+          shopt -s dotglob
+          cp -r app/* .
+
+      - name: List files before deployment (for debugging)
+        run: find . -type f
 
       - name: Login to Azure
         uses: azure/login@v2
@@ -63,11 +113,20 @@ jobs:
           tenant-id: ${{ secrets.AZUREAPPSERVICE_TENANTID_FF813C25EBC54D41816D0DC0FDC2C23B }}
           subscription-id: ${{ secrets.AZUREAPPSERVICE_SUBSCRIPTIONID_CE3068C0BB68418FB7F677E09B099DE8 }}
 
+      - name: Set Azure Web App environment variables
+        uses: azure/cli@v1
+        with:
+          azcliversion: latest
+          inlineScript: |
+            az webapp config appsettings set --name pinnaclecollege --resource-group "pinnacle-college" --settings \
+              DB_NAME='${{ secrets.DB_NAME }}' \
+              DB_USER='${{ secrets.DB_USER }}' \
+              DB_PASSWORD='${{ secrets.DB_PASSWORD }}' \
+              DB_HOST='${{ secrets.DB_HOST }}' \
+              DB_PORT='${{ secrets.DB_PORT }}'
+
       - name: Deploy to Azure Web App
         uses: azure/webapps-deploy@v3
         with:
           app-name: 'pinnaclecollege'
-          package: app.zip
           slot-name: 'Production'
-
-          
