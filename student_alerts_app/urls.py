@@ -1,4 +1,4 @@
-﻿from django.contrib import admin
+from django.contrib import admin
 from django.urls import path, include
 from django.conf import settings
 from django.conf.urls.static import static
@@ -16,26 +16,31 @@ def actuator_health(request):
     return JsonResponse({"status": "UP"})
 
 urlpatterns = [
+    # ✅ Safe default homepage
+    path('', views.custom_login_view, name='login'),
+
+    # Admin route
     path('admin', admin.site.urls),
-    path('', include('master.urls')), 
-    path('', include('admission.urls')), # Includes app-level URLs for the routes defined in `master.urls`
+
+    # Include app routes
+    path('', include('master.urls')),
+    path('', include('admission.urls')),
     path('', include('attendence.urls')),
     path('', include('license.urls')),
-    # project/urls.py
-path('', include('timetable.urls')),
-path('', include('lms.urls')),
-
-
-
-path('', include('core.urls')),
-
-
-
-path('fees', include('fees.urls')),
-path('transport/', include('transport.urls')),
- path('hr/', include('hr.urls')),
-   path('healthz/', lambda r: HttpResponse("ok")),
+    path('', include('timetable.urls')),  # ✅ removed duplicate
+    path('', include('lms.urls')),
+    path('', include('core.urls')),
+    
+    # Other routes
+    path('fees', include('fees.urls')),
+    path('transport/', include('transport.urls')),
+    path('healthz/', lambda r: HttpResponse("ok")),
     path('actuator/health/', actuator_health),
+]
+
+# ✅ Serve media files (only in development)
+urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
 
 
-]+ static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
+
+
