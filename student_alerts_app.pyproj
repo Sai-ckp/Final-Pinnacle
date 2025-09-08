@@ -101,6 +101,9 @@
     </Compile>
     <Compile Include="core\views.py" />
     <Compile Include="core\__init__.py" />
+    <Compile Include="Dockerfile.py">
+      <SubType>Code</SubType>
+    </Compile>
     <Compile Include="fees\admin.py" />
     <Compile Include="fees\apps.py" />
     <Compile Include="fees\forms.py">
@@ -177,6 +180,12 @@
     <Compile Include="master\__init__.py" />
     <Compile Include="master\migrations\__init__.py" />
     <Compile Include="manage.py" />
+    <Compile Include="student_alerts_app\deployment.py">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="student_alerts_app\storage.py">
+      <SubType>Code</SubType>
+    </Compile>
     <Compile Include="student_alerts_app\__init__.py" />
     <Compile Include="student_alerts_app\settings.py" />
     <Compile Include="student_alerts_app\urls.py" />
@@ -276,6 +285,18 @@
     <Folder Include="transport\templates\transport\" />
   </ItemGroup>
   <ItemGroup>
+    <Content Include=".azureignore">
+      <SubType>Code</SubType>
+    </Content>
+    <Content Include=".deployment">
+      <SubType>Code</SubType>
+    </Content>
+    <Content Include=".dockerignore">
+      <SubType>Code</SubType>
+    </Content>
+    <Content Include=".gitignore">
+      <SubType>Code</SubType>
+    </Content>
     <Content Include="admission\templates\admission\admin_student_payment_history_receipt.html" />
     <Content Include="admission\templates\admission\admission_dashboard.html" />
     <Content Include="admission\templates\admission\admission_form_fee_receipt.html" />

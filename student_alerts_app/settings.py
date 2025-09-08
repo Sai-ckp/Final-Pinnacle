@@ -22,7 +22,7 @@ BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 # See https://docs.djangoproject.com/en/2.1/howto/deployment/checklist/
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = '6e470ba8-802a-428f-b168-40d4eadee009'
+SECRET_KEY = os.getenv('SECRET_KEY', default='')
  
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
@@ -31,6 +31,7 @@ DEBUG = True
 
 
 ALLOWED_HOSTS = ['192.168.10.221', 'localhost', '127.0.0.1', '122.166.213.68']
+
 
 # Application references
 # https://docs.djangoproject.com/en/2.1/ref/settings/#std:setting-INSTALLED_APPS
@@ -105,20 +106,23 @@ TEMPLATES = [
 WSGI_APPLICATION = 'student_alerts_app.wsgi.application'
 # Database
 # https://docs.djangoproject.com/en/2.1/ref/settings/#databases
+
+
 DATABASES = {
-     'default': {
-        'ENGINE': 'django.db.backends.mysql',
-        'NAME': 'institute_db1',  # Replace with your actual database name
-        'USER': 'root',     # Replace with your MySQL username
-        'PASSWORD': 'root',  # Replace with your MySQL password
-        'HOST': 'localhost',           # Keep as 'localhost' if running MySQL locally
-        'PORT': '3306',                # Default MySQL port
+    'default': {
+        'ENGINE': 'django.db.backends.postgresql',
+        'NAME': os.getenv('DB_NAME'),      # Azure environment variable for database name
+        'USER': os.getenv('DB_USER'),      # Azure environment variable for username
+        'PASSWORD': os.getenv('DB_PASSWORD'),  # Azure environment variable for password
+        'HOST': os.getenv('DB_HOST'),      # Azure environment variable for host, e.g. yourserver.postgres.database.azure.com
+        'PORT': os.getenv('DB_PORT', '5432'),  # Azure environment variable for port, default to 5432
         'OPTIONS': {
-            'charset': 'utf8mb4',
-            'init_command': "SET NAMES 'utf8mb4'"
+            'sslmode': 'require',          # Required for secure connection to Azure PostgreSQL
         },
     }
 }
+
+
 
 # Password validation
 # https://docs.djangoproject.com/en/2.1/ref/settings/#auth-password-validators
