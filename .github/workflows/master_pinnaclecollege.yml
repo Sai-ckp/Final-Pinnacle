@@ -119,20 +119,10 @@ jobs:
           tenant-id: ${{ secrets.AZUREAPPSERVICE_TENANTID_FF813C25EBC54D41816D0DC0FDC2C23B }}
           subscription-id: ${{ secrets.AZUREAPPSERVICE_SUBSCRIPTIONID_CE3068C0BB68418FB7F677E09B099DE8 }}
 
-      - name: 🌐 Set Azure Web App environment variables
-        uses: azure/cli@v1
-        with:
-          azcliversion: latest
-          inlineScript: |
-            az webapp config appsettings set --name pinnaclecollege --resource-group "pinnacle-college" --settings \
-              DB_NAME='${{ secrets.DB_NAME }}' \
-              DB_USER='${{ secrets.DB_USER }}' \
-              DB_PASSWORD='${{ secrets.DB_PASSWORD }}' \
-              DB_HOST='${{ secrets.DB_HOST }}' \
-              DB_PORT='${{ secrets.DB_PORT }}' \
-              SECRET_KEY='${{ secrets.SECRET_KEY }}' \
-              DJANGO_SETTINGS_MODULE='student_alerts_app.deployment' \
-              PYTHONUNBUFFERED=1
+      # Removed az cli appsettings update step due to permissions issues
+      # You MUST manually add the environment variables in Azure Portal:
+      # Azure Portal > Web App (pinnaclecollege) > Configuration > Application settings
+      # Add DB_NAME, DB_USER, DB_PASSWORD, DB_HOST, DB_PORT, SECRET_KEY, DJANGO_SETTINGS_MODULE, PYTHONUNBUFFERED
 
       - name: 🧪 Run Django migrations
         env:
