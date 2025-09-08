@@ -16,6 +16,7 @@ et_xmlfile==2.0.0
 exceptiongroup==1.2.2
 fonttools==4.58.1
 frozenlist==1.6.0
+gunicorn==21.2.0
 idna==3.10
 iniconfig==2.1.0
 multidict==6.4.3
@@ -47,7 +48,9 @@ typing_extensions==4.13.2
 tzdata==2025.2
 urllib3==2.4.0
 weasyprint==65.1
+whitenoise==6.6.0
 webencodings==0.5.1
 yarl==1.20.0
 zopfli==0.2.3.post1
+
 
