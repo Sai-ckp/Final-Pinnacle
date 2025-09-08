@@ -23,7 +23,6 @@ urlpatterns = [
     path('', include('license.urls')),
     # project/urls.py
 path('', include('timetable.urls')),
-path('', include('timetable.urls')),
 path('', include('lms.urls')),
 
 
@@ -37,5 +36,6 @@ path('transport/', include('transport.urls')),
  path('hr/', include('hr.urls')),
    path('healthz/', lambda r: HttpResponse("ok")),
     path('actuator/health/', actuator_health),
+
 
 ]+ static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
