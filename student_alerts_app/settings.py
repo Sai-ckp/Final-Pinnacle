@@ -107,6 +107,16 @@ TEMPLATES = [
 WSGI_APPLICATION = 'student_alerts_app.wsgi.application'
 # Database
 # https://docs.djangoproject.com/en/2.1/ref/settings/#databases
+# Database
+# https://docs.djangoproject.com/en/2.1/ref/settings/#databases
+import os
+
+print("Testing environment variables:")
+print("DB_NAME =", os.getenv('DB_NAME'))
+print("DB_USER =", os.getenv('DB_USER'))
+print("DB_PASSWORD =", os.getenv('DB_PASSWORD'))
+print("DB_HOST =", os.getenv('DB_HOST'))
+print("DB_PORT =", os.getenv('DB_PORT'))
 
 
 DATABASES = {
@@ -123,7 +133,16 @@ DATABASES = {
     }
 }
 
+Default to BigAutoField to avoid migration warnings
+DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
+
+# Optional: For debugging to verify variables are loaded correctly, remove in production
+print("Database Configurations:")
+print("DB_NAME:", os.getenv('DB_NAME'))
+print("DB_USER:", os.getenv('DB_USER'))
+print("DB_HOST:", os.getenv('DB_HOST'))
+print("DB_PORT:", os.getenv('DB_PORT', '5432'))
 
 # Password validation
 # https://docs.djangoproject.com/en/2.1/ref/settings/#auth-password-validators
@@ -166,10 +185,18 @@ MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
 # Static files (CSS, JavaScript, Images)
 # https://docs.djangoproject.com/en/2.1/howto/static-files/
 STATIC_URL = '/static/'
-STATIC_ROOT = posixpath.join(*(BASE_DIR.split(os.path.sep) + ['static']))
+# Use Whitenoise Storage backend that skips decoding binaries
+STATICFILES_STORAGE = 'whitenoise.storage.CompressedStaticFilesStorage'
+STATIC_ROOT = os.path.join(BASE_DIR, 'static')
 TIME_ZONE = 'Asia/Kolkata'
 USE_TZ = True
 
+# Instruct Whitenoise to skip compression for binary static files
+WHITENOISE_SKIP_COMPRESS_EXTENSIONS = [
+    '.jpg', '.jpeg', '.png', '.gif', '.webp',
+    '.woff', '.woff2', '.ttf', '.eot', '.otf',
+    '.svg', '.ico', '.mp4', '.webm'
+]
 
 
 
@@ -179,6 +206,7 @@ MSGKART_EMAIL = "pscm@ckpsoftware.com"
 MSGKART_PHONE_ID = "677200268805951"
 MSGKART_ACCOUNT_ID = "1079493607572130"
 MSGKART_BASE_URL = "https://alb-backend.msgkart.com"
+
 
 
 
