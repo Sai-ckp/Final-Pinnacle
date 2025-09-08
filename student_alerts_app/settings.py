@@ -133,7 +133,7 @@ DATABASES = {
     }
 }
 
-Default to BigAutoField to avoid migration warnings
+
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 
@@ -206,6 +206,7 @@ MSGKART_EMAIL = "pscm@ckpsoftware.com"
 MSGKART_PHONE_ID = "677200268805951"
 MSGKART_ACCOUNT_ID = "1079493607572130"
 MSGKART_BASE_URL = "https://alb-backend.msgkart.com"
+
 
 
 
