@@ -18,7 +18,7 @@ fonttools==4.58.1
 frozenlist==1.6.0
 gunicorn==21.2.0
 holidays==0.25
-hijridate==2.2.0
+hijridate==2.2.4
 idna==3.10
 iniconfig==2.1.0
 multidict==6.4.3
@@ -54,6 +54,7 @@ whitenoise==6.6.0
 webencodings==0.5.1
 yarl==1.20.0
 zopfli==0.2.3.post1
+
 
 
 
