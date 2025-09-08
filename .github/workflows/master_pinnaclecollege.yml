@@ -22,12 +22,13 @@ jobs:
       DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
       DB_HOST: ${{ secrets.DB_HOST }}
       DB_PORT: ${{ secrets.DB_PORT }}
+      SECRET_KEY: ${{ secrets.SECRET_KEY }}
 
     steps:
-      - name: Checkout code
+      - name: 📦 Checkout code
         uses: actions/checkout@v4
 
-      - name: Install system dependencies for WeasyPrint
+      - name: 🧱 Install system dependencies for WeasyPrint
         run: |
           sudo apt-get update
           sudo apt-get install -y \
@@ -38,12 +39,12 @@ jobs:
             libffi-dev \
             shared-mime-info
 
-      - name: Set up Python
+      - name: 🐍 Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.9'
 
-      - name: Cache pip dependencies
+      - name: ♻️ Cache pip dependencies
         uses: actions/cache@v3
         with:
           path: ~/.cache/pip
@@ -51,34 +52,34 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-pip-
 
-      - name: Create virtual environment and install dependencies
+      - name: 🔧 Create virtual environment and install dependencies
         run: |
           python -m venv venv
           source venv/bin/activate
           pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Run collectstatic
+      - name: ⚙️ Run collectstatic
         env:
           DJANGO_SETTINGS_MODULE: student_alerts_app.deployment
         run: |
           source venv/bin/activate
           python manage.py collectstatic --noinput || true
 
-      - name: Run Django migrations
+      - name: 🔄 Run Django migrations
         env:
           DJANGO_SETTINGS_MODULE: student_alerts_app.deployment
         run: |
           source venv/bin/activate
           python manage.py migrate
 
-      - name: Prepare artifact
+      - name: 🧳 Prepare artifact for deployment
         run: |
           shopt -s dotglob
           mkdir artifact
           rsync -av --exclude='venv' --exclude='artifact' --exclude='.git' ./ artifact/
 
-      - name: Upload artifact for deployment
+      - name: ⬆️ Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: python-app
@@ -92,28 +93,28 @@ jobs:
       contents: read
 
     steps:
-      - name: Download artifact from build job
+      - name: ⬇️ Download artifact from build
         uses: actions/download-artifact@v4
         with:
           name: python-app
           path: app
 
-      - name: Move contents to root for deployment
+      - name: 📁 Move contents to root
         run: |
           shopt -s dotglob
           cp -r app/* .
 
-      - name: List files before deployment (for debugging)
+      - name: 📄 List files before deployment
         run: find . -type f
 
-      - name: Login to Azure
+      - name: 🔐 Login to Azure
         uses: azure/login@v2
         with:
           client-id: ${{ secrets.AZUREAPPSERVICE_CLIENTID_C153C72D964D4C23AD6589F51FAD1703 }}
           tenant-id: ${{ secrets.AZUREAPPSERVICE_TENANTID_FF813C25EBC54D41816D0DC0FDC2C23B }}
           subscription-id: ${{ secrets.AZUREAPPSERVICE_SUBSCRIPTIONID_CE3068C0BB68418FB7F677E09B099DE8 }}
 
-      - name: Set Azure Web App environment variables
+      - name: 🌐 Set Azure Web App environment variables
         uses: azure/cli@v1
         with:
           azcliversion: latest
@@ -123,11 +124,13 @@ jobs:
               DB_USER='${{ secrets.DB_USER }}' \
               DB_PASSWORD='${{ secrets.DB_PASSWORD }}' \
               DB_HOST='${{ secrets.DB_HOST }}' \
-              DB_PORT='${{ secrets.DB_PORT }}'
+              DB_PORT='${{ secrets.DB_PORT }}' \
+              SECRET_KEY='${{ secrets.SECRET_KEY }}' \
+              DJANGO_SETTINGS_MODULE='student_alerts_app.deployment' \
+              PYTHONUNBUFFERED=1
 
-      - name: Deploy to Azure Web App
+      - name: 🚀 Deploy to Azure Web App
         uses: azure/webapps-deploy@v3
         with:
           app-name: 'pinnaclecollege'
           slot-name: 'Production'
-
