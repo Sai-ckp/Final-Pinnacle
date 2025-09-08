@@ -66,13 +66,6 @@ jobs:
           source venv/bin/activate
           python manage.py collectstatic --noinput || true
 
-      - name: 🔄 Run Django migrations
-        env:
-          DJANGO_SETTINGS_MODULE: student_alerts_app.deployment
-        run: |
-          source venv/bin/activate
-          python manage.py migrate
-
       - name: 🧳 Prepare artifact for deployment
         run: |
           shopt -s dotglob
@@ -107,6 +100,18 @@ jobs:
       - name: 📄 List files before deployment
         run: find . -type f
 
+      - name: 🐍 Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.9'
+
+      - name: 🔧 Recreate venv and install dependencies
+        run: |
+          python -m venv venv
+          source venv/bin/activate
+          pip install --upgrade pip
+          pip install -r requirements.txt
+
       - name: 🔐 Login to Azure
         uses: azure/login@v2
         with:
@@ -129,8 +134,23 @@ jobs:
               DJANGO_SETTINGS_MODULE='student_alerts_app.deployment' \
               PYTHONUNBUFFERED=1
 
+      - name: 🧪 Run Django migrations
+        env:
+          DJANGO_SETTINGS_MODULE: student_alerts_app.deployment
+          DB_NAME: ${{ secrets.DB_NAME }}
+          DB_USER: ${{ secrets.DB_USER }}
+          DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
+          DB_HOST: ${{ secrets.DB_HOST }}
+          DB_PORT: ${{ secrets.DB_PORT }}
+          SECRET_KEY: ${{ secrets.SECRET_KEY }}
+        run: |
+          source venv/bin/activate
+          python manage.py migrate
+
       - name: 🚀 Deploy to Azure Web App
         uses: azure/webapps-deploy@v3
         with:
           app-name: 'pinnaclecollege'
           slot-name: 'Production'
+
+
