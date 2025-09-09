@@ -18,15 +18,16 @@ https://docs.djangoproject.com/en/2.1/howto/deployment/wsgi/
 
 
 import os
-
 from django.core.wsgi import get_wsgi_application
 
-# Determine the settings module based on the environment variable
-# If 'WEB_HOSTNAME' is set, use the production settings; otherwise, use the default settings.
-settings_module = 'student_alerts_app.deployment' if 'ALLOWED_HOSTS' in os.environ else 'student_alerts_app.settings'
+# Explicitly pick the correct settings file based on Azure env vars
+if os.getenv("WEBSITE_HOSTNAME"):  # This is always set in Azure App Service
+    settings_module = "student_alerts_app.deployment"
+else:
+    settings_module = "student_alerts_app.settings"
 
-# Set the DJANGO_SETTINGS_MODULE environment variable
 os.environ.setdefault("DJANGO_SETTINGS_MODULE", settings_module)
 
-
 application = get_wsgi_application()
+
+
