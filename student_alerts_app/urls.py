@@ -20,7 +20,7 @@ urlpatterns = [
     path('', views.custom_login_view, name='login'),
 
     # Admin route
-    path('admin', admin.site.urls),
+    path('admin/', admin.site.urls),
 
     # Include app routes
     path('', include('master.urls')),
@@ -40,6 +40,7 @@ urlpatterns = [
 
 # ✅ Serve media files (only in development)
 urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
+
 
 
 
