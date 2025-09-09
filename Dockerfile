@@ -24,18 +24,20 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Copy all source code
 COPY . .
 
-# Ensure WeasyPrint loads properly
+# Ensure WeasyPrint loads properly and collect static files
 RUN python -c "from weasyprint import HTML" && \
     python manage.py collectstatic --noinput
 
 # Stage 2: Final image with runtime dependencies
 FROM python:3.9-slim AS production
 
-ENV PYTHONUNBUFFERED=1
+ENV PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1
 
 WORKDIR /app
 
-# 🔧 Install WeasyPrint runtime dependencies (again — required!)
+# Install WeasyPrint runtime dependencies (again — required!)
 RUN apt-get update && apt-get install -y --no-install-recommends \
       libcairo2 libpango-1.0-0 libpangocairo-1.0-0 \
       libgdk-pixbuf2.0-0 libgobject-2.0-0 shared-mime-info \
@@ -47,9 +49,16 @@ RUN addgroup --system appgroup && adduser --system --ingroup appgroup appuser
 # Copy project from builder
 COPY --from=builder /app /app
 
+# ❗️ Copy requirements.txt explicitly again (just in case)
+COPY requirements.txt ./
+
+# ✅ Install Python dependencies again in production!
+RUN pip install --no-cache-dir -r requirements.txt
+
 # Set correct permissions
 RUN chown -R appuser:appgroup /app
 USER appuser
 
 EXPOSE 8000
+
 CMD ["gunicorn", "student_alerts_app.wsgi:application", "--bind", "0.0.0.0:8000"]
