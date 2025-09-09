@@ -81,6 +81,11 @@ jobs:
     runs-on: ubuntu-latest
     needs: build
 
+    # ✅ REQUIRED for Azure login to work with OIDC
+    permissions:
+      id-token: write
+      contents: read
+
     steps:
       - name: 📥 Download Artifact
         uses: actions/download-artifact@v4
@@ -110,11 +115,11 @@ jobs:
           source venv/bin/activate
           python manage.py migrate
 
-      # Optional: Uncomment if you want to re-run collectstatic on Azure
-      # - name: ⚙️ Re-run collectstatic (optional)
-      #   run: |
-      #     source venv/bin/activate
-      #     python manage.py collectstatic --noinput || true
+      # Optional: collectstatic on Azure (optional if done in build)
+      - name: ⚙️ Collect Static Files on Azure
+        run: |
+          source venv/bin/activate
+          python manage.py collectstatic --noinput || true
 
       - name: ⏳ Wait to Avoid SCM Conflicts
         run: sleep 15
