@@ -28,18 +28,7 @@ jobs:
       - name: 📥 Checkout Code
         uses: actions/checkout@v4
 
-      - name: 🧱 Install WeasyPrint Dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            libcairo2 \
-            libpango-1.0-0 \
-            libpangocairo-1.0-0 \
-            libgdk-pixbuf2.0-0 \
-            libffi-dev \
-            shared-mime-info
-
-      - name: 🐍 Setup Python
+      - name: 🐍 Setup Python 3.9
         uses: actions/setup-python@v5
         with:
           python-version: '3.9'
@@ -81,7 +70,6 @@ jobs:
     runs-on: ubuntu-latest
     needs: build
 
-    # ✅ REQUIRED for Azure login to work with OIDC
     permissions:
       id-token: write
       contents: read
@@ -98,7 +86,7 @@ jobs:
           shopt -s dotglob
           cp -r app/* .
 
-      - name: 🐍 Setup Python
+      - name: 🐍 Setup Python 3.9
         uses: actions/setup-python@v5
         with:
           python-version: '3.9'
@@ -115,7 +103,6 @@ jobs:
           source venv/bin/activate
           python manage.py migrate
 
-      # Optional: collectstatic on Azure (optional if done in build)
       - name: ⚙️ Collect Static Files on Azure
         run: |
           source venv/bin/activate
@@ -136,3 +123,5 @@ jobs:
         with:
           app-name: 'pinnaclecollege'
           slot-name: 'Production'
+
+
