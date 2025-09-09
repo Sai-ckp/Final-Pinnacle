@@ -2,7 +2,7 @@
 # More GitHub Actions for Azure: https://github.com/Azure/actions
 # More info on Python, GitHub Actions, and Azure App Service: https://aka.ms/python-webapps-actions
 
-name: Build and deploy Python app to Azure Web App - pinnaclecollege
+name: Build and Deploy Django App to Azure Web App
 
 on:
   push:
@@ -10,25 +10,25 @@ on:
       - master
   workflow_dispatch:
 
+env:
+  DJANGO_SETTINGS_MODULE: student_alerts_app.deployment
+  DB_NAME: ${{ secrets.DB_NAME }}
+  DB_USER: ${{ secrets.DB_USER }}
+  DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
+  DB_HOST: ${{ secrets.DB_HOST }}
+  DB_PORT: ${{ secrets.DB_PORT }}
+  SECRET_KEY: ${{ secrets.SECRET_KEY }}
+
 jobs:
   build:
+    name: 🛠 Build Django App
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
-
-    env:
-      DB_NAME: ${{ secrets.DB_NAME }}
-      DB_USER: ${{ secrets.DB_USER }}
-      DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
-      DB_HOST: ${{ secrets.DB_HOST }}
-      DB_PORT: ${{ secrets.DB_PORT }}
-      SECRET_KEY: ${{ secrets.SECRET_KEY }}
 
     steps:
-      - name: 📦 Checkout code
+      - name: 📥 Checkout Code
         uses: actions/checkout@v4
 
-      - name: 🧱 Install system dependencies for WeasyPrint
+      - name: 🧱 Install WeasyPrint Dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y \
@@ -39,7 +39,7 @@ jobs:
             libffi-dev \
             shared-mime-info
 
-      - name: 🐍 Set up Python
+      - name: 🐍 Setup Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.9'
@@ -52,90 +52,79 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-pip-
 
-      - name: 🔧 Create virtual environment and install dependencies
+      - name: 🔧 Install Dependencies
         run: |
           python -m venv venv
           source venv/bin/activate
           pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: ⚙️ Run collectstatic
-        env:
-          DJANGO_SETTINGS_MODULE: student_alerts_app.deployment
+      - name: ⚙️ Collect Static Files
         run: |
           source venv/bin/activate
           python manage.py collectstatic --noinput || true
 
-      - name: 🧳 Prepare artifact for deployment
+      - name: 📦 Create Deployment Artifact
         run: |
           shopt -s dotglob
           mkdir artifact
           rsync -av --exclude='venv' --exclude='artifact' --exclude='.git' ./ artifact/
 
-      - name: ⬆️ Upload artifact
+      - name: 📤 Upload Artifact
         uses: actions/upload-artifact@v4
         with:
           name: python-app
           path: artifact
 
   deploy:
+    name: 🚀 Deploy to Azure
     runs-on: ubuntu-latest
     needs: build
-    permissions:
-      id-token: write
-      contents: read
 
     steps:
-      - name: ⬇️ Download artifact from build
+      - name: 📥 Download Artifact
         uses: actions/download-artifact@v4
         with:
           name: python-app
           path: app
 
-      - name: 📁 Move contents to root
+      - name: 📂 Move App Files to Root
         run: |
           shopt -s dotglob
           cp -r app/* .
 
-      - name: 📄 List files before deployment
-        run: find . -type f
-
-      - name: 🐍 Set up Python
+      - name: 🐍 Setup Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.9'
 
-      - name: 🔧 Recreate venv and install dependencies
+      - name: 🛠 Recreate venv and Install Dependencies
         run: |
           python -m venv venv
           source venv/bin/activate
           pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: 🔐 Login to Azure
+      - name: 🐘 Run Database Migrations
+        run: |
+          source venv/bin/activate
+          python manage.py migrate
+
+      # Optional: Uncomment if you want to re-run collectstatic on Azure
+      # - name: ⚙️ Re-run collectstatic (optional)
+      #   run: |
+      #     source venv/bin/activate
+      #     python manage.py collectstatic --noinput || true
+
+      - name: ⏳ Wait to Avoid SCM Conflicts
+        run: sleep 15
+
+      - name: 🔐 Azure Login
         uses: azure/login@v2
         with:
           client-id: ${{ secrets.AZUREAPPSERVICE_CLIENTID_C153C72D964D4C23AD6589F51FAD1703 }}
           tenant-id: ${{ secrets.AZUREAPPSERVICE_TENANTID_FF813C25EBC54D41816D0DC0FDC2C23B }}
           subscription-id: ${{ secrets.AZUREAPPSERVICE_SUBSCRIPTIONID_CE3068C0BB68418FB7F677E09B099DE8 }}
-
-      # Removed az cli appsettings update step due to permissions issues
-      # You MUST manually add the environment variables in Azure Portal:
-      # Azure Portal > Web App (pinnaclecollege) > Configuration > Application settings
-      # Add DB_NAME, DB_USER, DB_PASSWORD, DB_HOST, DB_PORT, SECRET_KEY, DJANGO_SETTINGS_MODULE, PYTHONUNBUFFERED
-
-      - name: 🧪 Run Django migrations
-        env:
-          DJANGO_SETTINGS_MODULE: student_alerts_app.deployment
-          DB_NAME: ${{ secrets.DB_NAME }}
-          DB_USER: ${{ secrets.DB_USER }}
-          DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
-          DB_HOST: ${{ secrets.DB_HOST }}
-          DB_PORT: ${{ secrets.DB_PORT }}
-          SECRET_KEY: ${{ secrets.SECRET_KEY }}
-        run: |
-          source venv/bin/activate
-          python manage.py migrate
 
       - name: 🚀 Deploy to Azure Web App
         uses: azure/webapps-deploy@v3
