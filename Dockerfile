@@ -1,4 +1,3 @@
-# Stage 1: Build dependencies and static assets
 FROM python:3.9-slim AS builder
 
 ENV PYTHONUNBUFFERED=1 \
@@ -37,7 +36,7 @@ ENV PYTHONUNBUFFERED=1 \
 
 WORKDIR /app
 
-# Install WeasyPrint runtime dependencies (again — required!)
+# Install WeasyPrint runtime dependencies (required!)
 RUN apt-get update && apt-get install -y --no-install-recommends \
       libcairo2 libpango-1.0-0 libpangocairo-1.0-0 \
       libgdk-pixbuf2.0-0 libgobject-2.0-0 shared-mime-info \
@@ -46,14 +45,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Add non-root user
 RUN addgroup --system appgroup && adduser --system --ingroup appgroup appuser
 
-# Copy project from builder
+# Copy entire app (including installed packages from builder)
+COPY --from=builder /usr/local/lib/python3.9/site-packages /usr/local/lib/python3.9/site-packages
+COPY --from=builder /usr/local/bin /usr/local/bin
 COPY --from=builder /app /app
-
-# ❗️ Copy requirements.txt explicitly again (just in case)
-COPY requirements.txt ./
-
-# ✅ Install Python dependencies again in production!
-RUN pip install --no-cache-dir -r requirements.txt
 
 # Set correct permissions
 RUN chown -R appuser:appgroup /app
