@@ -28,31 +28,6 @@ jobs:
       - name: 📥 Checkout Code
         uses: actions/checkout@v4
 
-      - name: 🐍 Setup Python 3.9
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.9'
-
-      - name: ♻️ Cache pip dependencies
-        uses: actions/cache@v3
-        with:
-          path: ~/.cache/pip
-          key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}
-          restore-keys: |
-            ${{ runner.os }}-pip-
-
-      - name: 🔧 Install Dependencies
-        run: |
-          python -m venv venv
-          source venv/bin/activate
-          pip install --upgrade pip
-          pip install -r requirements.txt
-
-      - name: ⚙️ Collect Static Files
-        run: |
-          source venv/bin/activate
-          python manage.py collectstatic --noinput || true
-
       - name: 📦 Create Deployment Artifact
         run: |
           shopt -s dotglob
@@ -86,31 +61,6 @@ jobs:
           shopt -s dotglob
           cp -r app/* .
 
-      - name: 🐍 Setup Python 3.9
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.9'
-
-      - name: 🛠 Recreate venv and Install Dependencies
-        run: |
-          python -m venv venv
-          source venv/bin/activate
-          pip install --upgrade pip
-          pip install -r requirements.txt
-
-      - name: 🐘 Run Database Migrations
-        run: |
-          source venv/bin/activate
-          python manage.py migrate
-
-      - name: ⚙️ Collect Static Files on Azure
-        run: |
-          source venv/bin/activate
-          python manage.py collectstatic --noinput || true
-
-      - name: ⏳ Wait to Avoid SCM Conflicts
-        run: sleep 15
-
       - name: 🔐 Azure Login
         uses: azure/login@v2
         with:
@@ -123,5 +73,3 @@ jobs:
         with:
           app-name: 'pinnaclecollege'
           slot-name: 'Production'
-
-
