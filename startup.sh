@@ -16,7 +16,8 @@ else
 fi
 
 # Set Django settings module (adjust if you use prod.py)
-export DJANGO_SETTINGS_MODULE=student_alerts_app.settings
+export DJANGO_SETTINGS_MODULE=student_alerts_app.deployment
+
 
 # Upgrade pip & install dependencies
 echo "📦 Installing dependencies..." | tee -a "$LOGFILE"
