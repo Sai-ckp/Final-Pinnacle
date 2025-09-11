@@ -35,4 +35,4 @@ python /home/site/wwwroot/manage.py collectstatic --noinput >> "$LOGFILE" 2>&1
 # Start Gunicorn server
 echo "🔥 Starting Gunicorn..." | tee -a "$LOGFILE"
 exec gunicorn --workers=4 --threads=4 --timeout=120 \
-    --bind=0.0.0.0:8181 student_alerts_app.wsgi:application
+    --bind=0.0.0.0:8000 student_alerts_app.wsgi:application
