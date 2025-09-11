@@ -1,8 +1,8 @@
-name: Build and deploy Python app to Azure Web App - pinnaclecollege
+name: Build and Deploy Django App with Docker to Azure Web App - pinnaclecollege
 
 on:
   push:
-    branches: [ main ]   # make sure EntraID federated credential matches this branch
+    branches: [ main ]
   workflow_dispatch:
 
 jobs:
@@ -12,74 +12,31 @@ jobs:
       id-token: write
       contents: read
 
-    env:
-      DB_NAME: ${{ secrets.DB_NAME }}
-      DB_USER: ${{ secrets.DB_USER }}
-      DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
-      DB_HOST: ${{ secrets.DB_HOST }}
-      DB_PORT: ${{ secrets.DB_PORT }}
-
     steps:
       - name: 📥 Checkout code
         uses: actions/checkout@v4
 
-      - name: 🔎 Detect changed files
-        id: changes
-        uses: dorny/paths-filter@v3
+      # 🔐 Login to Azure
+      - name: 🔐 Login to Azure
+        uses: azure/login@v2
         with:
-          filters: |
-            html:
-              - '**/*.html'
-              - 'templates/**'
-            static:
-              - 'static/**'
-            backend:
-              - '**/*.py'
-              - 'requirements.txt'
+          client-id: ${{ secrets.AZUREAPPSERVICE_CLIENTID }}
+          tenant-id: ${{ secrets.AZUREAPPSERVICE_TENANTID }}
+          subscription-id: ${{ secrets.AZUREAPPSERVICE_SUBSCRIPTIONID }}
 
-      - name: 🐍 Set up Python
-        uses: actions/setup-python@v5
+      # 🔐 Log in to ACR
+      - name: 🔐 Log in to Azure Container Registry
+        uses: azure/docker-login@v2
         with:
-          python-version: '3.9'
+          login-server: ${{ secrets.ACR_LOGIN_SERVER }}
+          username: ${{ secrets.ACR_USERNAME }}
+          password: ${{ secrets.ACR_PASSWORD }}
 
-      - name: 💾 Cache pip dependencies
-        uses: actions/cache@v3
-        with:
-          path: ~/.cache/pip
-          key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}
-          restore-keys: |
-            ${{ runner.os }}-pip-
-
-      - name: 📦 Install dependencies
+      # 🐳 Build & Push Docker image
+      - name: 🐳 Build and Push Docker image
         run: |
-          pip install --upgrade pip
-          pip install -r requirements.txt
-
-      - name: 🧺 collectstatic (only when needed)
-        if: steps.changes.outputs.html == 'true' || steps.changes.outputs.static == 'true' || steps.changes.outputs.backend == 'true'
-        env:
-          DJANGO_SETTINGS_MODULE: student_alerts_app.deployment
-        run: |
-          python manage.py collectstatic --noinput || true
-
-      - name: 🗄️ Run Django migrations (only when backend changed)
-        if: steps.changes.outputs.backend == 'true'
-        env:
-          DJANGO_SETTINGS_MODULE: student_alerts_app.deployment
-        run: |
-          python manage.py migrate
-
-      - name: 📦 Prepare artifact
-        run: |
-          shopt -s dotglob
-          mkdir artifact
-          rsync -av --exclude='venv' --exclude='artifact' --exclude='.git' ./ artifact/
-
-      - name: ⬆️ Upload artifact for deployment
-        uses: actions/upload-artifact@v4
-        with:
-          name: python-app
-          path: artifact
+          docker build -t ${{ secrets.ACR_LOGIN_SERVER }}/pinnaclecollege:${{ github.sha }} .
+          docker push ${{ secrets.ACR_LOGIN_SERVER }}/pinnaclecollege:${{ github.sha }}
 
   deploy:
     runs-on: ubuntu-latest
@@ -89,68 +46,36 @@ jobs:
       contents: read
 
     steps:
-      - name: ⬇️ Download artifact from build job
-        uses: actions/download-artifact@v4
-        with:
-          name: python-app
-          path: app
-
-      - name: 📂 Move contents to root for deployment
-        run: |
-          shopt -s dotglob
-          cp -r app/* .
-
-      - name: 🔍 List files before deployment (debug)
-        run: |
-          pwd
-          ls -la
-          echo "---- requirements.txt (first 120 lines) ----"
-          sed -n '1,120p' requirements.txt || true
-
-      - name: 🔐 Login to Azure (OIDC)
+      - name: 🔐 Login to Azure
         uses: azure/login@v2
         with:
           client-id: ${{ secrets.AZUREAPPSERVICE_CLIENTID }}
           tenant-id: ${{ secrets.AZUREAPPSERVICE_TENANTID }}
           subscription-id: ${{ secrets.AZUREAPPSERVICE_SUBSCRIPTIONID }}
 
-      - name: ⚙️ Configure app settings & startup
+      # 🚀 Deploy Web App to use Docker image
+      - name: 🚀 Deploy to Azure Web App (Docker)
         uses: azure/cli@v1
         with:
-          azcliversion: latest
           inlineScript: |
+            az webapp config container set \
+              --name pinnaclecollege \
+              --resource-group "pinnacle" \
+              --docker-custom-image-name ${{ secrets.ACR_LOGIN_SERVER }}/pinnaclecollege:${{ github.sha }} \
+              --docker-registry-server-url https://${{ secrets.ACR_LOGIN_SERVER }} \
+              --docker-registry-server-user ${{ secrets.ACR_USERNAME }} \
+              --docker-registry-server-password ${{ secrets.ACR_PASSWORD }}
+
+            # ✅ Environment variables for Django
             az webapp config appsettings set \
               --name pinnaclecollege \
               --resource-group "pinnacle" \
-              --settings SCM_DO_BUILD_DURING_DEPLOYMENT=false ENABLE_ORYX_BUILD=false
-            az webapp config set \
-              --name pinnaclecollege \
-              --resource-group "pinnacle" \
-              --startup-file "gunicorn student_alerts_app.wsgi:application --bind=0.0.0.0:\$PORT"
-
-      - name: 🌱 Set Azure Web App environment variables (DB, etc.)
-        uses: azure/cli@v1
-        with:
-          azcliversion: latest
-          inlineScript: |
-            az webapp config appsettings set --name pinnaclecollege --resource-group "pinnacle" --settings \
+              --settings \
               DB_NAME='${{ secrets.DB_NAME }}' \
               DB_USER='${{ secrets.DB_USER }}' \
               DB_PASSWORD='${{ secrets.DB_PASSWORD }}' \
               DB_HOST='${{ secrets.DB_HOST }}' \
-              DB_PORT='${{ secrets.DB_PORT }}'
-
-      # 👇 Re-login before deploy to avoid expired token
-      - name: 🔐 Re-login to Azure (OIDC refresh)
-        uses: azure/login@v2
-        with:
-          client-id: ${{ secrets.AZUREAPPSERVICE_CLIENTID }}
-          tenant-id: ${{ secrets.AZUREAPPSERVICE_TENANTID }}
-          subscription-id: ${{ secrets.AZUREAPPSERVICE_SUBSCRIPTIONID }}
-
-      - name: 🚀 Deploy to Azure Web App
-        uses: azure/webapps-deploy@v3
-        with:
-          app-name: 'pinnaclecollege'
-          slot-name: 'Production'
-          package: .
+              DB_PORT='${{ secrets.DB_PORT }}' \
+              DJANGO_SETTINGS_MODULE='student_alerts_app.prod' \
+              SECRET_KEY='${{ secrets.SECRET_KEY }}' \
+              DEBUG='False'
