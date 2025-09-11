@@ -2,7 +2,7 @@ name: Build and deploy Python app to Azure Web App - pinnaclecollege
 
 on:
   push:
-    branches: [ main ]   # make sure your EntraID federated credential matches this branch
+    branches: [ main ]   # make sure EntraID federated credential matches this branch
   workflow_dispatch:
 
 jobs:
@@ -37,17 +37,6 @@ jobs:
               - '**/*.py'
               - 'requirements.txt'
 
-      - name: 🧱 Install system dependencies for WeasyPrint (runner)
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            libcairo2 \
-            libpango-1.0-0 \
-            libpangocairo-1.0-0 \
-            libgdk-pixbuf2.0-0 \
-            libffi-dev \
-            shared-mime-info
-
       - name: 🐍 Set up Python
         uses: actions/setup-python@v5
         with:
@@ -61,10 +50,8 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-pip-
 
-      - name: 📦 Create venv & install dependencies (runner)
+      - name: 📦 Install dependencies
         run: |
-          python -m venv venv
-          source venv/bin/activate
           pip install --upgrade pip
           pip install -r requirements.txt
 
@@ -73,7 +60,6 @@ jobs:
         env:
           DJANGO_SETTINGS_MODULE: student_alerts_app.deployment
         run: |
-          source venv/bin/activate
           python manage.py collectstatic --noinput || true
 
       - name: 🗄️ Run Django migrations (only when backend changed)
@@ -81,7 +67,6 @@ jobs:
         env:
           DJANGO_SETTINGS_MODULE: student_alerts_app.deployment
         run: |
-          source venv/bin/activate
           python manage.py migrate
 
       - name: 📦 Prepare artifact
@@ -89,13 +74,6 @@ jobs:
           shopt -s dotglob
           mkdir artifact
           rsync -av --exclude='venv' --exclude='artifact' --exclude='.git' ./ artifact/
-
-      # >>> KEY STEP: vendor runtime deps into the artifact so App Service has Django/gunicorn
-      - name: 📦 Vendor Python dependencies into artifact
-        run: |
-          python -m pip install --upgrade pip
-          mkdir -p artifact/.python_packages/lib/site-packages
-          pip install -r requirements.txt -t artifact/.python_packages/lib/site-packages
 
       - name: ⬆️ Upload artifact for deployment
         uses: actions/upload-artifact@v4
@@ -136,7 +114,6 @@ jobs:
           tenant-id: ${{ secrets.AZUREAPPSERVICE_TENANTID }}
           subscription-id: ${{ secrets.AZUREAPPSERVICE_SUBSCRIPTIONID }}
 
-      # Disable Oryx (not needed since we vendor packages) + set startup command
       - name: ⚙️ Configure app settings & startup
         uses: azure/cli@v1
         with:
@@ -146,7 +123,6 @@ jobs:
               --name pinnaclecollege \
               --resource-group "pinnacle" \
               --settings SCM_DO_BUILD_DURING_DEPLOYMENT=false ENABLE_ORYX_BUILD=false
-
             az webapp config set \
               --name pinnaclecollege \
               --resource-group "pinnacle" \
@@ -163,6 +139,14 @@ jobs:
               DB_PASSWORD='${{ secrets.DB_PASSWORD }}' \
               DB_HOST='${{ secrets.DB_HOST }}' \
               DB_PORT='${{ secrets.DB_PORT }}'
+
+      # 👇 Re-login before deploy to avoid expired token
+      - name: 🔐 Re-login to Azure (OIDC refresh)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZUREAPPSERVICE_CLIENTID }}
+          tenant-id: ${{ secrets.AZUREAPPSERVICE_TENANTID }}
+          subscription-id: ${{ secrets.AZUREAPPSERVICE_SUBSCRIPTIONID }}
 
       - name: 🚀 Deploy to Azure Web App
         uses: azure/webapps-deploy@v3
