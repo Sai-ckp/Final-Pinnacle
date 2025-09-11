@@ -54,6 +54,6 @@ COPY --from=builder /app /app
 RUN chown -R appuser:appgroup /app
 USER appuser
 
-EXPOSE 8181
+EXPOSE 8000
 
 CMD ["gunicorn", "student_alerts_app.wsgi:application", "--bind", "0.0.0.0:8000"]
