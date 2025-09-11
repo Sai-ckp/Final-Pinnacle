@@ -73,3 +73,5 @@ jobs:
         with:
           app-name: 'pinnaclecollege'
           slot-name: 'Production'
+          package: .
+
