@@ -219,7 +219,7 @@ jobs:
               --settings SCM_DO_BUILD_DURING_DEPLOYMENT=true ENABLE_ORYX_BUILD=true
             az webapp config set \
               --name pinnaclecollege \
-              --resource-group "pinnacle-college" \
+              --resource-group "pinnacle" \
               --startup-file "gunicorn student_alerts_app.wsgi:application --bind=0.0.0.0:\$PORT"
 
       - name: 🌱 Set Azure Web App environment variables (DB, etc.)
@@ -240,6 +240,7 @@ jobs:
           app-name: 'pinnaclecollege'
           slot-name: 'Production'
           package: .
+
 
 
 
