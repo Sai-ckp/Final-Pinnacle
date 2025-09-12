@@ -1,124 +1,140 @@
-name: Build and Deploy Django App to Azure Web App
+name: Build and deploy Python app to Azure Web App - pinnaclecollege
 
 on:
   push:
-    branches:
-      - master
+    branches: [ master ]
   workflow_dispatch:
-
-env:
-  DJANGO_SETTINGS_MODULE: student_alerts_app.deployment
-  DB_NAME: ${{ secrets.DB_NAME }}
-  DB_USER: ${{ secrets.DB_USER }}
-  DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
-  DB_HOST: ${{ secrets.DB_HOST }}
-  DB_PORT: ${{ secrets.DB_PORT }}
-  SECRET_KEY: ${{ secrets.SECRET_KEY }}
 
 jobs:
   build:
-    name: 🛠 Build Django App
     runs-on: ubuntu-latest
-
-    steps:
-      - name: 📥 Checkout Code
-        uses: actions/checkout@v4
-
-      - name: 🐍 Setup Python 3.9
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.9'
-
-      - name: ♻️ Cache pip dependencies
-        uses: actions/cache@v3
-        with:
-          path: ~/.cache/pip
-          key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}
-          restore-keys: |
-            ${{ runner.os }}-pip-
-
-      - name: 🔧 Install Dependencies
-        run: |
-          python -m venv venv
-          source venv/bin/activate
-          pip install --upgrade pip
-          pip install -r requirements.txt
-
-      - name: ⚙️ Collect Static Files
-        run: |
-          source venv/bin/activate
-          python manage.py collectstatic --noinput || true
-
-      - name: 📦 Create Deployment Artifact
-        run: |
-          shopt -s dotglob
-          mkdir artifact
-          rsync -av --exclude='venv' --exclude='artifact' --exclude='.git' ./ artifact/
-
-      - name: 📤 Upload Artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: python-app
-          path: artifact
-
-  deploy:
-    name: 🚀 Deploy to Azure
-    runs-on: ubuntu-latest
-    needs: build
-
     permissions:
       id-token: write
       contents: read
 
     steps:
-      - name: 📥 Download Artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: python-app
-          path: app
+      - name: 📥 Checkout
+        uses: actions/checkout@v4
 
-      - name: 📂 Move App Files to Root
-        run: |
-          shopt -s dotglob
-          cp -r app/* .
-
-      - name: 🐍 Setup Python 3.9
+      - name: 🐍 Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.9'
 
-      - name: 🛠 Recreate venv and Install Dependencies
+      # Copy your code into an artifact folder (exclude only junk; KEEP Django apps)
+      - name: 📦 Prepare artifact folder
         run: |
-          python -m venv venv
-          source venv/bin/activate
-          pip install --upgrade pip
-          pip install -r requirements.txt
+          shopt -s dotglob
+          mkdir -p artifact
+          rsync -av \
+            --delete \
+            --exclude='.git' \
+            --exclude='venv' \
+            --exclude='env' \
+            --exclude='artifact' \
+            --exclude='__pycache__' \
+            --exclude='.pytest_cache' \
+            --exclude='.mypy_cache' \
+            --exclude='*.pyc' \
+            --exclude='*.log' \
+            --exclude='*.zip' \
+            --exclude='*.tar' \
+            --exclude='*.tar.gz' \
+            --exclude='downloads' \
+            --exclude='excel_uploads' \
+            --exclude='media' \
+            --exclude='uploads' \
+            ./ artifact/
 
-      - name: 🐘 Run Database Migrations
+      # Install runtime deps INTO the artifact so App Service finds them
+      - name: 📦 Vendor Python dependencies into artifact
         run: |
-          source venv/bin/activate
-          python manage.py migrate
+          python -m pip install --upgrade pip
+          mkdir -p artifact/.python_packages/lib/site-packages
+          pip install -r artifact/requirements.txt -t artifact/.python_packages/lib/site-packages
 
-      - name: ⚙️ Collect Static Files on Azure
+      - name: 🔍 Sanity check artifact contents
         run: |
-          source venv/bin/activate
-          python manage.py collectstatic --noinput || true
+          echo "Top level:" && ls -la artifact | sed -n '1,120p'
+          echo "Expect to see: manage.py, requirements.txt, student_alerts_app/ ..."
+          test -f artifact/manage.py && echo "✅ manage.py present" || (echo "❌ manage.py missing" && exit 1)
+          test -f artifact/requirements.txt && echo "✅ requirements.txt present" || (echo "❌ requirements.txt missing" && exit 1)
+          test -f artifact/student_alerts_app/wsgi.py && echo "✅ wsgi present" || (echo "❌ wsgi missing" && exit 1)
+          du -sh artifact || true
 
-      - name: ⏳ Wait to Avoid SCM Conflicts
-        run: sleep 15
+      - name: ⬆️ Upload artifact (folder)
+        uses: actions/upload-artifact@v4
+        with:
+          name: python-app-folder
+          path: artifact
 
-      - name: 🔐 Azure Login
+  deploy:
+    runs-on: ubuntu-latest
+    needs: build
+    permissions:
+      id-token: write
+      contents: read
+
+    steps:
+      - name: ⬇️ Download artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: python-app-folder
+          path: app
+
+      - name: 📂 Show what will be deployed
+        run: |
+          echo "app/ listing:"
+          ls -la app | sed -n '1,200p'
+          echo "Expect to see your Django code & .python_packages here."
+
+      - name: 🔐 Azure login (OIDC)
         uses: azure/login@v2
         with:
-          client-id: ${{ secrets.AZUREAPPSERVICE_CLIENTID}}
-          tenant-id: ${{ secrets.AZUREAPPSERVICE_TENANTID}}
-          subscription-id: ${{ secrets.AZUREAPPSERVICE_SUBSCRIPTIONID}}
+          client-id: ${{ secrets.AZUREAPPSERVICE_CLIENTID }}
+          tenant-id: ${{ secrets.AZUREAPPSERVICE_TENANTID }}
+          subscription-id: ${{ secrets.AZUREAPPSERVICE_SUBSCRIPTIONID }}
 
-      - name: 🚀 Deploy to Azure Web App
+      # Configure app once per deploy (idempotent)
+      - name: ⚙️ Configure Web App (no Oryx, no RFP, set PYTHONPATH & startup)
+        uses: azure/cli@v1
+        with:
+          azcliversion: latest
+          inlineScript: |
+            # Turn OFF Run-From-Package so the folder gets extracted to wwwroot
+            az webapp config appsettings set -g pinnacle -n pinnaclecollege \
+              --settings WEBSITE_RUN_FROM_PACKAGE=0 \
+                         SCM_DO_BUILD_DURING_DEPLOYMENT=false \
+                         ENABLE_ORYX_BUILD=false \
+                         PYTHONPATH=/home/site/wwwroot/.python_packages/lib/site-packages
+
+            # Gunicorn startup (uses platform $PORT)
+            az webapp config set -g pinnacle -n pinnaclecollege \
+              --startup-file "gunicorn student_alerts_app.wsgi:application --bind=0.0.0.0:\$PORT"
+
+            # (Optional) enable container logs for easier debugging
+            az webapp log config -g pinnacle -n pinnaclecollege \
+              --docker-container-logging filesystem --level information
+
+            # DB env vars (values come from repo secrets)
+            az webapp config appsettings set -g pinnacle -n pinnaclecollege --settings \
+              DB_NAME='${{ secrets.DB_NAME }}' \
+              DB_USER='${{ secrets.DB_USER }}' \
+              DB_PASSWORD='${{ secrets.DB_PASSWORD }}' \
+              DB_HOST='${{ secrets.DB_HOST }}' \
+              DB_PORT='${{ secrets.DB_PORT }}'
+
+      # Refresh token just before deploy so upload doesn't hit token expiry
+      - name: 🔐 Azure login (refresh before deploy)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZUREAPPSERVICE_CLIENTID }}
+          tenant-id: ${{ secrets.AZUREAPPSERVICE_TENANTID }}
+          subscription-id: ${{ secrets.AZUREAPPSERVICE_SUBSCRIPTIONID }}
+
+      - name: 🚀 Deploy folder to Azure Web App (OneDeploy)
         uses: azure/webapps-deploy@v3
         with:
-          app-name: 'pinnaclecollege'
-          slot-name: 'Production'
-
-
-
+          app-name: pinnaclecollege
+          slot-name: Production
+          package: app      # <-- deploy the folder so files appear under /home/site/wwwroot
