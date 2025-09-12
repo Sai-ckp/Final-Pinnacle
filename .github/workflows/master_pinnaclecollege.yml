@@ -2,7 +2,8 @@ name: Build and deploy Python app to Azure Web App - pinnaclecollege
 
 on:
   push:
-    branches: [ master ]
+    branches:
+      - master
   workflow_dispatch:
 
 jobs:
@@ -11,8 +12,15 @@ jobs:
     permissions:
       contents: read
 
+    env:
+      DB_NAME: ${{ secrets.DB_NAME }}
+      DB_USER: ${{ secrets.DB_USER }}
+      DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
+      DB_HOST: ${{ secrets.DB_HOST }}
+      DB_PORT: ${{ secrets.DB_PORT }}
+
     steps:
-      - name: Checkout
+      - name: Checkout code
         uses: actions/checkout@v4
 
       - name: Set up Python
@@ -20,46 +28,24 @@ jobs:
         with:
           python-version: '3.9'
 
-      # Stage source → artifact (exclude only junk; KEEP your Django apps)
-      - name: Prepare artifact folder
+      - name: Install dependencies
+        run: |
+          python -m venv venv
+          source venv/bin/activate
+          pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Prepare artifact
         run: |
           shopt -s dotglob
-          mkdir -p artifact
-          rsync -av \
-            --delete \
-            --exclude='.git' \
-            --exclude='venv' \
-            --exclude='env' \
-            --exclude='artifact' \
-            --exclude='__pycache__' \
-            --exclude='.pytest_cache' \
-            --exclude='.mypy_cache' \
-            --exclude='*.pyc' \
-            --exclude='*.log' \
-            --exclude='*.zip' \
-            --exclude='*.tar' \
-            --exclude='*.tar.gz' \
-            --exclude='downloads' \
-            --exclude='excel_uploads' \
-            --exclude='media' \
-            --exclude='uploads' \
-            ./ artifact/
-          # neutralize files that can change what gets deployed
-          rm -f artifact/.azureignore artifact/.deployment
+          mkdir artifact
+          rsync -av --exclude='venv' --exclude='artifact' --exclude='.git' ./ artifact/
 
-      - name: Create deployment zip
-        run: |
-          cd artifact
-          zip -r ../artifact.zip . -x "*/__pycache__/*"
-          cd -
-          du -sh artifact.zip || true
-          unzip -l artifact.zip | sed -n '1,200p'  # sanity: must show manage.py, requirements.txt, student_alerts_app/wsgi.py, etc.
-
-      - name: Upload artifact
+      - name: Upload artifact for deployment
         uses: actions/upload-artifact@v4
         with:
-          name: python-app-zip
-          path: artifact.zip
+          name: python-app
+          path: artifact
 
   deploy:
     runs-on: ubuntu-latest
@@ -69,53 +55,38 @@ jobs:
       contents: read
 
     steps:
-      - name: Download artifact
+      - name: Download artifact from build job
         uses: actions/download-artifact@v4
         with:
-          name: python-app-zip
-          path: .
+          name: python-app
+          path: app
 
-      - name: Azure login (OIDC)
+      - name: Move contents to root
+        run: |
+          shopt -s dotglob
+          cp -r app/* .
+
+      - name: Login to Azure
         uses: azure/login@v2
         with:
           client-id: ${{ secrets.AZUREAPPSERVICE_CLIENTID }}
           tenant-id: ${{ secrets.AZUREAPPSERVICE_TENANTID }}
           subscription-id: ${{ secrets.AZUREAPPSERVICE_SUBSCRIPTIONID }}
 
-      - name: Configure Web App (Oryx ON, RFP OFF, startup)
+      - name: Set Azure Web App environment variables
         uses: azure/cli@v1
         with:
           azcliversion: latest
           inlineScript: |
-            # Oryx remote build so requirements get installed server-side
-            az webapp config appsettings set -g pinnacle -n pinnaclecollege --settings \
-              SCM_DO_BUILD_DURING_DEPLOYMENT=true \
-              ENABLE_ORYX_BUILD=true \
-              WEBSITE_RUN_FROM_PACKAGE=0
-            
-            # Optional: enable container logs
-            az webapp log config -g pinnacle -n pinnaclecollege \
-              --docker-container-logging filesystem --level information
+            az webapp config appsettings set --name pinnaclecollege --resource-group "pinnacle" --settings \
+              DB_NAME='${{ secrets.DB_NAME }}' \
+              DB_USER='${{ secrets.DB_USER }}' \
+              DB_PASSWORD='${{ secrets.DB_PASSWORD }}' \
+              DB_HOST='${{ secrets.DB_HOST }}' \
+              DB_PORT='${{ secrets.DB_PORT }}'
 
-      # Refresh token right before the upload to avoid 60-min expiry
-      - name: Azure login (refresh before deploy)
-        uses: azure/login@v2
+      - name: Deploy to Azure Web App
+        uses: azure/webapps-deploy@v3
         with:
-          client-id: ${{ secrets.AZUREAPPSERVICE_CLIENTID }}
-          tenant-id: ${{ secrets.AZUREAPPSERVICE_TENANTID }}
-          subscription-id: ${{ secrets.AZUREAPPSERVICE_SUBSCRIPTIONID }}
-
-      # ✅ Use CLI Zip Deploy (more resilient than webapps-deploy@v3)
-      - name: Zip Deploy via Azure CLI
-        uses: azure/cli@v1
-        with:
-          azcliversion: latest
-          inlineScript: |
-            az webapp deploy \
-              --resource-group pinnacle \
-              --name pinnaclecollege \
-              --src-path artifact.zip \
-              --type zip \
-              --clean true \
-              --restart true
-
+          app-name: 'pinnaclecollege'
+          slot-name: 'Production'
