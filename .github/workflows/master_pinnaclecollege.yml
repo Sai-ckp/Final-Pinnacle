@@ -73,6 +73,17 @@ jobs:
           tenant-id: ${{ secrets.AZUREAPPSERVICE_TENANTID }}
           subscription-id: ${{ secrets.AZUREAPPSERVICE_SUBSCRIPTIONID }}
 
+      - name: Clear Oryx package cache (once)
+        uses: azure/cli@v1
+        with:
+          azcliversion: latest
+          inlineScript: |
+            az webapp ssh --resource-group pinnacle --name pinnaclecollege --command "
+              rm -f /home/data/SitePackages/SitePackages.json &&
+              rm -f /home/data/SitePackages/*.zip &&
+              rm -rf /home/site/wwwroot/.python_packages || true
+            " || true
+
       - name: Set Azure Web App environment variables
         uses: azure/cli@v1
         with:
@@ -90,3 +101,4 @@ jobs:
         with:
           app-name: 'pinnaclecollege'
           slot-name: 'Production'
+
