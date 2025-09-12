@@ -9,70 +9,97 @@ jobs:
   build:
     runs-on: ubuntu-latest
     permissions:
-      id-token: write
       contents: read
 
+    env:
+      DB_NAME: ${{ secrets.DB_NAME }}
+      DB_USER: ${{ secrets.DB_USER }}
+      DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
+      DB_HOST: ${{ secrets.DB_HOST }}
+      DB_PORT: ${{ secrets.DB_PORT }}
+
     steps:
-      - name: 📥 Checkout
+      - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: 🐍 Set up Python
+      - name: Detect changed files
+        id: changes
+        uses: dorny/paths-filter@v3
+        with:
+          filters: |
+            html:
+              - '**/*.html'
+              - 'templates/**'
+            static:
+              - 'static/**'
+            backend:
+              - '**/*.py'
+              - 'requirements.txt'
+
+      - name: Install system dependencies for WeasyPrint
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libcairo2 \
+            libpango-1.0-0 \
+            libpangocairo-1.0-0 \
+            libgdk-pixbuf2.0-0 \
+            libffi-dev \
+            shared-mime-info
+
+      - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.9'
 
-      # Copy your code into artifact (exclude junk; KEEP Django apps)
-      - name: 📦 Prepare artifact folder
+      - name: Cache pip dependencies
+        uses: actions/cache@v3
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-
+
+      - name: Create venv & install deps (for build-time tasks only)
+        run: |
+          python -m venv venv
+          source venv/bin/activate
+          pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: collectstatic (when needed)
+        if: steps.changes.outputs.html == 'true' || steps.changes.outputs.static == 'true' || steps.changes.outputs.backend == 'true'
+        env:
+          DJANGO_SETTINGS_MODULE: student_alerts_app.deployment
+        run: |
+          source venv/bin/activate
+          python manage.py collectstatic --noinput || true
+
+      - name: Run Django migrations (when backend changed)
+        if: steps.changes.outputs.backend == 'true'
+        env:
+          DJANGO_SETTINGS_MODULE: student_alerts_app.deployment
+        run: |
+          source venv/bin/activate
+          python manage.py migrate
+
+      - name: Prepare artifact
         run: |
           shopt -s dotglob
-          mkdir -p artifact
+          mkdir artifact
+          # keep your code; exclude only obvious junk
           rsync -av \
-            --delete \
-            --exclude='.git' \
-            --exclude='venv' \
-            --exclude='env' \
-            --exclude='artifact' \
-            --exclude='__pycache__' \
-            --exclude='.pytest_cache' \
-            --exclude='.mypy_cache' \
-            --exclude='*.pyc' \
-            --exclude='*.log' \
-            --exclude='*.zip' \
-            --exclude='*.tar' \
-            --exclude='*.tar.gz' \
-            --exclude='downloads' \
-            --exclude='excel_uploads' \
-            --exclude='media' \
-            --exclude='uploads' \
+            --exclude='venv' --exclude='artifact' --exclude='.git' \
+            --exclude='__pycache__' --exclude='.pytest_cache' --exclude='.mypy_cache' \
+            --exclude='*.pyc' --exclude='*.log' \
+            --exclude='downloads' --exclude='excel_uploads' --exclude='media' --exclude='uploads' \
             ./ artifact/
 
-          # VERY IMPORTANT: remove files that can change what gets deployed
-          rm -f artifact/.azureignore artifact/.deployment
-
-      - name: 📦 Vendor Python dependencies into artifact
-        run: |
-          python -m pip install --upgrade pip
-          mkdir -p artifact/.python_packages/lib/site-packages
-          pip install -r artifact/requirements.txt -t artifact/.python_packages/lib/site-packages
-
-      - name: 🗜️ Create deployment zip (for extraction)
-        run: |
-          cd artifact
-          zip -r ../artifact.zip . -x "*/__pycache__/*"
-          cd -
-          du -sh artifact.zip || true
-
-      # Must show your code is in the zip
-      - name: 🔍 List artifact contents
-        run: |
-          unzip -l artifact.zip | sed -n '1,200p'
-          echo "Expect: manage.py, requirements.txt, student_alerts_app/wsgi.py, app folders, .python_packages/"
-
-      - name: ⬆️ Upload artifact
+      - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: python-app-zip
-          path: artifact.zip
+          name: python-app
+          path: artifact
 
   deploy:
     runs-on: ubuntu-latest
@@ -82,58 +109,55 @@ jobs:
       contents: read
 
     steps:
-      - name: ⬇️ Download artifact
+      - name: Download artifact
         uses: actions/download-artifact@v4
         with:
-          name: python-app-zip
-          path: .
+          name: python-app
+          path: app
 
-      - name: 🔐 Azure login (OIDC)
+      - name: Make publish dir & remove deploy-altering files
+        run: |
+          # publish from ./site to keep workspace tidy
+          mkdir -p site
+          shopt -s dotglob
+          cp -r app/* site/
+          # IMPORTANT: prevent Kudu from ignoring your code
+          rm -f site/.azureignore site/.deployment
+          echo "Top-level publish tree:"
+          find site -maxdepth 2 -type f | sed -n '1,120p'
+
+      - name: Login to Azure (OIDC)
         uses: azure/login@v2
         with:
           client-id: ${{ secrets.AZUREAPPSERVICE_CLIENTID }}
           tenant-id: ${{ secrets.AZUREAPPSERVICE_TENANTID }}
           subscription-id: ${{ secrets.AZUREAPPSERVICE_SUBSCRIPTIONID }}
 
-      - name: ⚙️ Configure Web App
+      - name: Set app settings (enable Oryx remote build explicitly)
         uses: azure/cli@v1
         with:
           azcliversion: latest
           inlineScript: |
-            # Deploy by extracting into wwwroot (RFP OFF) and keep Oryx OFF
-            az webapp config appsettings set -g pinnacle -n pinnaclecollege --settings \
-              WEBSITE_RUN_FROM_PACKAGE=0 \
-              SCM_DO_BUILD_DURING_DEPLOYMENT=false \
-              ENABLE_ORYX_BUILD=false \
-              PYTHONPATH=/home/site/wwwroot/.python_packages/lib/site-packages
-
-            # Gunicorn startup
-            az webapp config set -g pinnacle -n pinnaclecollege \
-              --startup-file "gunicorn student_alerts_app.wsgi:application --bind=0.0.0.0:\$PORT"
-
-            # Optional logs
-            az webapp log config -g pinnacle -n pinnaclecollege \
-              --docker-container-logging filesystem --level information
-
-            # DB envs
-            az webapp config appsettings set -g pinnacle -n pinnaclecollege --settings \
+            az webapp config appsettings set --name pinnaclecollege --resource-group "pinnacle" --settings \
+              SCM_DO_BUILD_DURING_DEPLOYMENT=true \
+              ENABLE_ORYX_BUILD=true \
               DB_NAME='${{ secrets.DB_NAME }}' \
               DB_USER='${{ secrets.DB_USER }}' \
               DB_PASSWORD='${{ secrets.DB_PASSWORD }}' \
               DB_HOST='${{ secrets.DB_HOST }}' \
               DB_PORT='${{ secrets.DB_PORT }}'
 
-      # Fresh token right before upload
-      - name: 🔐 Azure login (refresh before deploy)
+      # Fresh token right before upload helps avoid 60-min expiry
+      - name: Azure login (refresh before deploy)
         uses: azure/login@v2
         with:
           client-id: ${{ secrets.AZUREAPPSERVICE_CLIENTID }}
           tenant-id: ${{ secrets.AZUREAPPSERVICE_TENANTID }}
           subscription-id: ${{ secrets.AZUREAPPSERVICE_SUBSCRIPTIONID }}
 
-      - name: 🚀 Deploy zip (extract to wwwroot)
+      - name: Deploy to Azure Web App
         uses: azure/webapps-deploy@v3
         with:
           app-name: 'pinnaclecollege'
           slot-name: 'Production'
-          package: artifact.zip
+          package: site
