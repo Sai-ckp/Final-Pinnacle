@@ -3,7 +3,7 @@ name: Build and deploy Python app to Azure Web App - pinnaclecollege
 
 on:
   push:
-    branches: [ main ]   # make sure EntraID federated credential matches this branch
+    branches: [ master ]   # make sure EntraID federated credential matches this branch
   workflow_dispatch:
 
 jobs:
@@ -145,3 +145,4 @@ jobs:
           app-name: 'pinnaclecollege'
           slot-name: 'Production'
           package: .
+
