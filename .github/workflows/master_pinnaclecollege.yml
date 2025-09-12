@@ -21,7 +21,7 @@ jobs:
         with:
           python-version: '3.9'
 
-      # Copy your code into an artifact dir (exclude only junk; KEEP Django apps)
+      # Copy your code into artifact (exclude junk; KEEP Django apps)
       - name: 📦 Prepare artifact folder
         run: |
           shopt -s dotglob
@@ -46,26 +46,27 @@ jobs:
             --exclude='uploads' \
             ./ artifact/
 
-      # Vendor runtime deps INTO the artifact so Django/gunicorn exist on the server
+          # VERY IMPORTANT: remove files that can change what gets deployed
+          rm -f artifact/.azureignore artifact/.deployment
+
       - name: 📦 Vendor Python dependencies into artifact
         run: |
           python -m pip install --upgrade pip
           mkdir -p artifact/.python_packages/lib/site-packages
           pip install -r artifact/requirements.txt -t artifact/.python_packages/lib/site-packages
 
-      # Create a zip we can inspect and deploy
-      - name: 🗜️ Create deployment zip
+      - name: 🗜️ Create deployment zip (for extraction)
         run: |
           cd artifact
           zip -r ../artifact.zip . -x "*/__pycache__/*"
           cd -
           du -sh artifact.zip || true
 
-      # MUST show your code before deploy (sanity check)
-      - name: 🔍 List artifact contents (top-level)
+      # Must show your code is in the zip
+      - name: 🔍 List artifact contents
         run: |
           unzip -l artifact.zip | sed -n '1,200p'
-          echo "Expect to see: manage.py, requirements.txt, student_alerts_app/wsgi.py, your app folders, .python_packages/"
+          echo "Expect: manage.py, requirements.txt, student_alerts_app/wsgi.py, app folders, .python_packages/"
 
       - name: ⬆️ Upload artifact
         uses: actions/upload-artifact@v4
@@ -94,26 +95,27 @@ jobs:
           tenant-id: ${{ secrets.AZUREAPPSERVICE_TENANTID }}
           subscription-id: ${{ secrets.AZUREAPPSERVICE_SUBSCRIPTIONID }}
 
-      # Configure (idempotent): Oryx OFF, RFP OFF, set PYTHONPATH and startup
       - name: ⚙️ Configure Web App
         uses: azure/cli@v1
         with:
           azcliversion: latest
           inlineScript: |
+            # Deploy by extracting into wwwroot (RFP OFF) and keep Oryx OFF
             az webapp config appsettings set -g pinnacle -n pinnaclecollege --settings \
               WEBSITE_RUN_FROM_PACKAGE=0 \
               SCM_DO_BUILD_DURING_DEPLOYMENT=false \
               ENABLE_ORYX_BUILD=false \
               PYTHONPATH=/home/site/wwwroot/.python_packages/lib/site-packages
 
+            # Gunicorn startup
             az webapp config set -g pinnacle -n pinnaclecollege \
               --startup-file "gunicorn student_alerts_app.wsgi:application --bind=0.0.0.0:\$PORT"
 
-            # (Optional) logs
+            # Optional logs
             az webapp log config -g pinnacle -n pinnaclecollege \
               --docker-container-logging filesystem --level information
 
-            # App (DB) settings
+            # DB envs
             az webapp config appsettings set -g pinnacle -n pinnaclecollege --settings \
               DB_NAME='${{ secrets.DB_NAME }}' \
               DB_USER='${{ secrets.DB_USER }}' \
@@ -121,7 +123,7 @@ jobs:
               DB_HOST='${{ secrets.DB_HOST }}' \
               DB_PORT='${{ secrets.DB_PORT }}'
 
-      # Refresh token right before the upload (avoid token expiry)
+      # Fresh token right before upload
       - name: 🔐 Azure login (refresh before deploy)
         uses: azure/login@v2
         with:
