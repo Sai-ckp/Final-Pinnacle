@@ -1,3 +1,4 @@
+#!/bin/bash
 touch /home/site/wwwroot/started.txt
 source /home/site/wwwroot/venv/bin/activate
 python manage.py migrate
