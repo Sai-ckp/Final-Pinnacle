@@ -92,9 +92,7 @@ jobs:
               SCM_DO_BUILD_DURING_DEPLOYMENT=true \
               ENABLE_ORYX_BUILD=true \
               WEBSITE_RUN_FROM_PACKAGE=0
-            # Gunicorn startup (no startup.sh)
-            az webapp config set -g pinnacle -n pinnaclecollege \
-              --startup-file "gunicorn student_alerts_app.wsgi:application --bind=0.0.0.0:\$PORT"
+            
             # Optional: enable container logs
             az webapp log config -g pinnacle -n pinnaclecollege \
               --docker-container-logging filesystem --level information
@@ -120,3 +118,4 @@ jobs:
               --type zip \
               --clean true \
               --restart true
+
