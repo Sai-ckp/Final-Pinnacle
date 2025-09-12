@@ -124,8 +124,8 @@ pycryptodome==3.23.0
 pydeck==0.9.1
 pydyf==0.11.0
 Pygments==2.18.0
-pyHanko==0.29.0
-pyhanko-certvalidator==0.27.0
+pyHanko==0.18.3
+pyhanko-certvalidator==0.23.0
 pyinstaller==6.12.0
 pyinstaller-hooks-contrib==2025.1
 PyJWT==2.10.1
@@ -207,5 +207,6 @@ yarl==1.20.0
 yfinance==0.2.55
 zipp==3.18.1
 zopfli==0.2.3.post1
+
 
 
