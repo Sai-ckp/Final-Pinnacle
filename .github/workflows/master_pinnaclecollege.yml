@@ -2,7 +2,7 @@ name: Build and deploy Python app to Azure Web App - pinnaclecollege
 
 on:
   push:
-    branches: [ master ]   # <-- Must match your EntraID federated credential subject
+    branches: [ master ]
   workflow_dispatch:
 
 jobs:
@@ -21,13 +21,12 @@ jobs:
         with:
           python-version: '3.9'
 
-      # Prepare a LEAN artifact (exclude heavy/local junk, but keep your Django code)
-      - name: 📦 Prepare artifact (slim copy)
+      # Copy everything except heavy/local junk. KEEP your Django code.
+      - name: 📦 Prepare artifact folder
         run: |
           shopt -s dotglob
           mkdir -p artifact
           rsync -av \
-            --delete \
             --exclude='.git' \
             --exclude='venv' \
             --exclude='env' \
@@ -46,23 +45,31 @@ jobs:
             --exclude='uploads' \
             ./ artifact/
 
-      # Vendor runtime deps into the artifact so Django/gunicorn exist at runtime
+      # Install runtime deps into the artifact so they exist on the App Service
       - name: 📦 Vendor Python dependencies into artifact
         run: |
           python -m pip install --upgrade pip
           mkdir -p artifact/.python_packages/lib/site-packages
           pip install -r artifact/requirements.txt -t artifact/.python_packages/lib/site-packages
 
-      - name: 🔍 Verify artifact contents & size
+      # ZIP the artifact for Run-From-Package
+      - name: 🗜️ Create deployment zip
         run: |
-          ls -la artifact | head -100
-          du -sh artifact || true
+          cd artifact
+          zip -r ../artifact.zip . -x "*/__pycache__/*"
+          cd -
+          du -sh artifact.zip || true
+
+      # Show what we are deploying (sanity check)
+      - name: 🔍 List artifact contents (top-level)
+        run: |
+          unzip -l artifact.zip | head -100
 
       - name: ⬆️ Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: python-app
-          path: artifact
+          name: python-app-zip
+          path: artifact.zip
 
   deploy:
     runs-on: ubuntu-latest
@@ -75,17 +82,10 @@ jobs:
       - name: ⬇️ Download artifact
         uses: actions/download-artifact@v4
         with:
-          name: python-app
-          path: app
+          name: python-app-zip
+          path: .
 
-      - name: 📂 Move contents to root for deployment
-        run: |
-          shopt -s dotglob
-          cp -r app/* .
-          echo "Root listing before deploy:"
-          ls -la | head -120
-
-      # Login once to set config/app settings
+      # Login to set config
       - name: 🔐 Azure login (OIDC)
         uses: azure/login@v2
         with:
@@ -93,37 +93,41 @@ jobs:
           tenant-id: ${{ secrets.AZUREAPPSERVICE_TENANTID }}
           subscription-id: ${{ secrets.AZUREAPPSERVICE_SUBSCRIPTIONID }}
 
-      # Disable Oryx (we vendor deps), set PYTHONPATH and startup command, and DB envs
-      - name: ⚙️ Configure Web App
+      # Configure once per deploy (idempotent)
+      - name: ⚙️ Configure Web App (startup, run-from-package, pythonpath, logs)
         uses: azure/cli@v1
         with:
           azcliversion: latest
           inlineScript: |
+            # Enable Run-From-Package
             az webapp config appsettings set \
-              --name pinnaclecollege \
-              --resource-group "pinnacle" \
-              --settings \
-                SCM_DO_BUILD_DURING_DEPLOYMENT=false \
-                ENABLE_ORYX_BUILD=false \
-                PYTHONPATH=/home/site/wwwroot/.python_packages/lib/site-packages
+              -g pinnacle -n pinnaclecollege \
+              --settings WEBSITE_RUN_FROM_PACKAGE=1
 
+            # Make sure vendored deps are on PYTHONPATH
+            az webapp config appsettings set \
+              -g pinnacle -n pinnaclecollege \
+              --settings PYTHONPATH=/home/site/wwwroot/.python_packages/lib/site-packages
+
+            # Set Gunicorn startup
             az webapp config set \
-              --name pinnaclecollege \
-              --resource-group "pinnacle" \
+              -g pinnacle -n pinnaclecollege \
               --startup-file "gunicorn student_alerts_app.wsgi:application --bind=0.0.0.0:\$PORT"
 
-            # App (DB) settings
-            az webapp config appsettings set \
-              --name pinnaclecollege \
-              --resource-group "pinnacle" \
-              --settings \
-                DB_NAME='${{ secrets.DB_NAME }}' \
-                DB_USER='${{ secrets.DB_USER }}' \
-                DB_PASSWORD='${{ secrets.DB_PASSWORD }}' \
-                DB_HOST='${{ secrets.DB_HOST }}' \
-                DB_PORT='${{ secrets.DB_PORT }}'
+            # (Optional) Turn on container logs to see startup errors
+            az webapp log config \
+              -g pinnacle -n pinnaclecollege \
+              --docker-container-logging filesystem --level information
 
-      # Refresh token right before heavy upload to avoid 60-min expiry
+            # DB settings (leave values in GitHub Secrets)
+            az webapp config appsettings set -g pinnacle -n pinnaclecollege --settings \
+              DB_NAME='${{ secrets.DB_NAME }}' \
+              DB_USER='${{ secrets.DB_USER }}' \
+              DB_PASSWORD='${{ secrets.DB_PASSWORD }}' \
+              DB_HOST='${{ secrets.DB_HOST }}' \
+              DB_PORT='${{ secrets.DB_PORT }}'
+
+      # Refresh token right before upload to avoid 60-min expiry
       - name: 🔐 Azure login (refresh before deploy)
         uses: azure/login@v2
         with:
@@ -131,9 +135,9 @@ jobs:
           tenant-id: ${{ secrets.AZUREAPPSERVICE_TENANTID }}
           subscription-id: ${{ secrets.AZUREAPPSERVICE_SUBSCRIPTIONID }}
 
-      - name: 🚀 Deploy to Azure Web App
+      - name: 🚀 Deploy to Azure Web App (Run-From-Package)
         uses: azure/webapps-deploy@v3
         with:
           app-name: 'pinnaclecollege'
           slot-name: 'Production'
-          package: .
+          package: artifact.zip
