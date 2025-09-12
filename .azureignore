@@ -13,3 +13,4 @@ antenv/
 env/
 
 .vs/
+Dockerfile
