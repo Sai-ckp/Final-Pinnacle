@@ -97,15 +97,7 @@ jobs:
               DB_PORT='${{ secrets.DB_PORT }}'
 
 
-      - name: Set startup script to delete broken packages
-        uses: azure/cli@v1
-        with:
-          inlineScript: |
-            az webapp config set \
-              --resource-group pinnacle \
-              --name pinnaclecollege \
-              --startup-file "/bin/bash -c 'rm -rf /home/site/wwwroot/.python_packages && gunicorn student_alerts_app.wsgi'"
-
+     
               
 
       - name: Deploy to Azure Web App
@@ -113,5 +105,6 @@ jobs:
         with:
           app-name: 'pinnaclecollege'
           slot-name: 'Production'
+
 
 
