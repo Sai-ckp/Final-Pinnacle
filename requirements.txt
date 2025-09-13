@@ -11,7 +11,7 @@ cffi==1.17.1
 charset-normalizer==3.4.2
 colorama==0.4.6
 cssselect2==0.8.0
-cryptography==40.0.2
+cryptography==43.0.3  # updated from 40.0.2
 Django==4.2.23
 et_xmlfile==2.0.0
 exceptiongroup==1.2.2
@@ -45,7 +45,7 @@ tinycss2==1.4.0
 tinyhtml5==2.0.0
 tomli==2.2.1
 twilio==9.6.0
-typing_extensions==4.13.2
+typing_extensions==4.12.2  # downgraded to match kombu dependency
 tzdata==2025.2
 urllib3==2.4.0
 weasyprint==65.1
@@ -53,4 +53,3 @@ webencodings==0.5.1
 whitenoise==6.0.0
 yarl==1.20.0
 zopfli==0.2.3.post1
-
